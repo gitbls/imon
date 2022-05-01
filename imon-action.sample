@@ -1,0 +1,95 @@
+#!/bin/bash
+#
+# Arguments passed to the imon action script by monitor type
+#
+#   $3                  $1     $2      $3               $4        $5                                  
+#
+#updown: IP Address up/down Monitor commands
+# updown-online:     instance syslog updown-online     ipaddr    datediffstr
+# updown-offline:    instance syslog updown-offline    ipaddr
+#
+#ddns: External IP Monitor commands
+# ddns-ip-update:    instance syslog ddns-ipupdate     newip     oldip
+# ddns-no-update:    instance syslog ddns-noupdate   
+#
+#failover: Failover Monitor commands
+# failover-initial:  instance syslog failover-initial  networkinfo
+# failover-primary:  instance syslog failover-primary  primaryinfo
+# failover-standby:  instance syslog failover-standby  standbyinfo
+# failover-bothdown: instance syslog failover-bothdown primaryinfo standbyinfo
+# failover-postping: instance syslog failover-postping networkinfo online|offline
+#   networkinfo, primaryinfo, standbyinfo = "name:ename:ifname:ip"
+#     where name:   primary_name or standby_name
+#           ename:  either Primary or Standby
+#           ifname: interface name
+#           ip:     ip address
+#
+#ping: Regular ping monitoring updates
+# ping-result        instance syslog ping-result is_alive min-rtt avg-rtt max-rtt packet-loss jitter
+#
+
+imalog() {
+    if [ "$syslog" == "0" ]
+    then
+	logger "imon action [$instance] $1"
+    else
+	echo "imon action [$instance] $1"
+    fi
+}
+
+instance="$1"
+syslog="$2"
+cmd="$3"
+arg1="$4"
+arg2="$5"
+#echo "imon-action: |$cmd|$arg1|$arg2|"
+case ${cmd,,} in
+    updown-online)
+	imalog "updown-online: $cmd $arg1 $arg2"
+	;;
+    updown-offline)
+	imalog "updown-offline: $cmd $arg1 $arg2"
+	;;
+    ddns-ip-update)
+	imalog "ddns-ip-update: $cmd $arg1 $arg2"
+        # External IP Address change
+        # If the file /usr/local/bin/$(hostname)-ip-update exists and is executable, it will be run
+        localipupdate="/usr/local/bin/$(hostname)-ip-update"
+        if [ -x $localipupdate ]
+        then
+            $localipupdate $arg1 $arg2   #NewIP OldIP
+        else
+            [ -e $localipupdate ] && imalog "%% File $localipupdate is not executable"
+            imalog "New IP Address: $arg1"
+            imalog "Old IP Address: $arg2"
+        fi
+	;;
+    ddns-no-update)
+	imalog "NO UPDATE"
+	;;
+    failover-initial)
+	IFS=":" read name ename ifname ip <<< $arg1
+	imalog "failover-primary: |$name|$ename|$ifname|$ip state:$arg2"
+	;;
+    failover-primary)
+	IFS=":" read name ename ifname ip <<< $arg1
+	imalog "failover-primary: |$name|$ename|$ifname|$ip"
+	;;
+    failover-standby)
+	IFS=":" read name ename ifname ip <<< $arg1
+	imalog "failover-standby: |$name|$ename|$ifname|$ip"
+	;;
+    failover-bothdown)
+	imalog "failover-bothdown: $cmd $arg1 $arg2"
+	;;
+    failover-postping)
+	imalog "failover-postping: $cmd $arg1 $arg2"
+	;;
+    ping-result)
+	IFS=":" read ipaddr online minrtt avgrtt maxrtt pktloss jitter <<< $arg1
+	imalog "ping-result: ipaddr:$ipaddr online:$online minrtt:$minrtt avgrtt:$avgrtt maxrtt:$maxrtt pktloss:$pktloss jitter:$jitter"
+	;;
+    *)
+	imalog "%% Unrecognized imon action command '$cmd'"
+	;;
+esac

@@ -1,0 +1,522 @@
+#!/usr/bin/python3
+
+version="V2.90"
+
+import argparse
+import datetime
+from icmplib import ping, multiping
+import ipaddress
+import json
+import os
+import re
+import requests
+import subprocess
+import sys
+import syslog
+import threading
+import time
+
+def perrorexit(emsg):
+    """
+    Print the message and exit the program
+    """
+    raise SystemExit(emsg)
+
+def dosystem(docmd):
+    """
+    Execute the string as a separate process
+    Returns the result from subprocess.run, which contains: returncode, stdout, and stderr (text)
+    """
+    return subprocess.run(docmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True, text=True)
+
+def callaction(pd, cmd, aargs):
+    if pd.db['global']['action'] != "":
+        r = dosystem('{} {} {} {} {}'.format(pd.db['global']['action'], pd.instance, "0" if pd.syslog else "1", cmd, aargs))
+        if not pd.syslog:
+            if r.returncode == 0:
+                print(r.stdout.strip())
+            else:
+                print(r.stderr.strip())
+    return
+
+def fmtdate(pd, thisdate):
+    # Format date per --datefmt 
+    return datetime.datetime.strftime(thisdate, pd.db['global']['datefmt'])
+
+def fmtcdate(pd, thisdate):
+    # Format date in canonical format to pass to action script
+    return datetime.datetime.strftime(thisdate, pd.cdtfmt)
+
+def logit(pd, s, mname=""):
+    if mname == "":
+        instname = pd.instance
+    else:
+        instname = "{}-{}".format(pd.instance, mname) if pd.multifn else pd.instance #Include monitor name if provided and multi-monitor mode
+    if pd.syslog:
+        syslog.syslog(syslog.LOG_INFO, "imon [{}] {}".format(instname, s))
+    else:
+        print("{} [{}] {}".format(datetime.datetime.strftime(datetime.datetime.now(), pd.db['global']['datefmt']), instname, s))
+
+def datediffstr(adiff):
+    # Days:hours:minutes:seconds to pass to action script
+    ahours = int(adiff.seconds/3600)
+    amins = int((adiff.seconds %3600)/60)
+    asecs = adiff.seconds - (ahours*3600) - (amins*60)
+    return "{}:{}:{}:{}".format(adiff.days, ahours, amins, asecs)
+
+def langdatediff(adiff):
+    # Converts datediff to an English language representation
+    ahours = int(adiff.seconds/3600)
+    amins = int((adiff.seconds %3600)/60)
+    asecs = adiff.seconds - (ahours*3600) - (amins*60)
+    return "{} days {} hours, {} minutes {} seconds".format(adiff.days, ahours, amins, asecs)
+
+def isdnsname(domain):
+    return re.match('''
+        (?=^.{,253}$)          # max. length 253 chars
+        (?!^.+\.\d+$)          # TLD is not fully numerical
+        (?=^[^-.].+[^-.]$)     # doesn't start/end with '-' or '.'
+        (?!^.+(\.-|-\.).+$)    # levels don't start/end with '-'
+        (?:[a-z\d-]            # uses only allowed chars
+        {1,63}(\.|$))          # max. level length 63 chars
+        {2,127}                # max. 127 levels
+        ''', domain, re.X | re.I)
+
+def isipaddr(address):
+    try:
+        ip = ipaddress.ip_address(address)
+        return True
+    except ValueError:
+        return False
+
+def getconfig(pd):
+    instfn = "/etc/default/imon-{}".format(pd.instance)
+    if os.path.exists(instfn):
+        logit(pd, "Configuration file {}".format(instfn))
+        with open(instfn, 'r') as cf:
+            try:
+                pd.db = json.load(cf)
+            except ValueError:
+                perrorexit("? Configuration file '{}' has invalid syntax".format(cf))
+        for section in pd.db:
+            logit(pd, "** [{}] ** ".format(section))
+            for item in pd.db[section]:
+                if item == 'pingcount' or item == 'pingwait': pd.db[section][item] = int(pd.db[section][item])
+                logit(pd, "    {name:<17} {val}".format(name=item, val=pd.db[section][item]))
+                if item == "addping": pd.db[section][item] = pd.db[section][item].split(',')
+        if not 'debug' in pd.db['global']: pd.db['global']['debug'] = False
+    else:
+        perrorexit("? Instance configuration file '{}' not found".format(pd.instance))
+
+class pdat:
+    def __init__(self):
+        self.parser = self.args = None
+        self.running = self.syslog = self.multifn = False
+        self.cdtfmt = "+%Y-%m-%dT%H:%M:%S"
+        self.instance = ""
+        self.db = {'global':{"datefmt":"%Y-%m-%d %H:%M:%S"}}  #Preload datefmt so early nosyslog logits work
+
+class _failoverMonitor(threading.Thread):
+    def __init__(self, pd):
+        threading.Thread.__init__(self)
+        self.pd = pd
+        self.notfirst = False
+        self.timer = self.interval = self.pd.db['failover']['interval']
+        tnow = datetime.datetime.now()
+        self.primaryx = {'if':self.pd.db['failover']['primary-if'], \
+                         'ename':"Primary", \
+                         'name':self.pd.db['failover']['primary-name'], \
+                         'ip':"", \
+                         'gw':self.pd.db['failover']['primary-gw'], \
+                         'ping':self.pd.db['failover']['primary-ping'], \
+                         'postping':self.pd.db['failover']['primary-postping'], \
+                         'state':False,
+                         'on':False,
+                         'timedown':tnow }
+        self.primaryx['devnam'] = "'{}'".format(self.primaryx['if']) if self.primaryx['name'] == "" \
+            else "{} ({})".format(self.primaryx['name'], self.primaryx['if'])
+        self.standbyx = {'if':self.pd.db['failover']['standby-if'], \
+                         'ename':"Standby", \
+                         'name':self.pd.db['failover']['standby-name'], \
+                         'ip':"", \
+                         'gw':self.pd.db['failover']['standby-gw'], \
+                         'ping':self.pd.db['failover']['standby-ping'], \
+                         'postping':self.pd.db['failover']['standby-postping'], \
+                         'state':False,
+                         'on':False,
+                         'timedown':tnow }
+        self.standbyx['devnam'] = "'{}'".format(self.standbyx['if']) if self.standbyx['name'] == "" \
+            else "{} ({})".format(self.standbyx['name'], self.standbyx['if'])
+        self.prefprimary = self.pd.db['failover']['prefer-primary']
+        self.setDaemon(True)
+
+    def _packifinfo(self, ifdat):
+        return "{}:{}:{}:{}".format(ifdat['name'],ifdat['ename'],ifdat['if'],ifdat['ip'])
+
+    def _logit(self, msg):
+        logit(self.pd, msg, mname="failover")
+
+    def _getipaddr(self, devname):
+        r = dosystem("ip -o -br -f inet addr show {}".format(devname))
+        ipline = r.stdout.strip()
+        # line looks like: eth0             UP             192.168.92.220/24
+        # grab the IP address and strip the mask
+        return ' '.join(ipline.split()).split()[2].split("/")[0] if ipline != "" else ""
+        return ipaddr
+
+    def _isonline(self, ifdat, iping=""):
+        tip = iping if iping != "" else ifdat['gw']
+        try:
+            host = ping(tip, count=self.pd.db['failover']['pingcount'], timeout=self.pd.db['failover']['pingwait'], source=ifdat['ip'], privileged=True)
+            return host.is_alive
+        except:
+            return False
+
+    def _ckping(self, ifdat):
+        if ifdat['postping'] != "":
+            if self._isonline(ifdat, iping=ifdat['postping']):
+                self._logit("Info: {} Network Ping Target {} Online After Failover".format(ifdat['ename'], ifdat['postping']))
+                olstatus = "online"
+            else:
+                self._logit("Warn: {} Network Ping Target {} Not Responding After Failover".format(ifdat['ename'], ifda['postping']))
+                olstatus = "offline"
+            callaction(self.pd, "failover-postping", "{} {}".format(self._packifinfo(ifdat), olstatus))
+
+    def _getroute(self, ipaddr):
+        r = dosystem("ip route list src {} default".format(ipaddr))
+        return r.stdout.strip()
+
+    def _route_add(self, ifdat):
+        if self._getroute(ifdat['ip']) == "": 
+            r = dosystem("ip route add {}".format("default via {} dev {} src {} metric {}".format(ifdat['gw'], ifdat['if'], ifdat['ip'], self.pd.db['failover']['metric'])))
+        return
+
+    def _route_delete(self, ifdat):
+        if self._getroute(ifdat['ip']) != "":
+            r = dosystem("ip route delete default via {}".format(ifdat['gw']))
+        return
+
+    def _dofailover(self, ito, ifrom):
+        if ito['on']: return
+        if not ito['state']: return
+        ito['on'] = True
+        ifrom['on'] = False
+        self._logit("Network Failover to {} Network {}".format(ito['ename'], ito['devnam']))
+        self._route_delete(ifrom)
+        self._route_add(ito)
+        self._logit("Network Failover {} Route {} is active".format(ito['ename'], ito['devnam']))
+        act = "failover-primary" if ito == self.primaryx else "failover-standby"
+        callaction(self.pd, act, self._packifinfo(ito))
+        self._ckping(ito)
+
+    def _printinistate(self, ifdat, state):
+        self._logit("Network Failover Initial State for {} Network {}: {}".format(ifdat['ename'], ifdat['devnam'], state))
+        callaction(self.pd, "failover-initial", "{} {}".format(self._packifinfo(ifdat), state))
+
+    def _ck1online(self):
+        # Return True if at least one link is online
+        if self.notfirst:
+            if not (self.primaryx['on'] or self.standbyx['on']): return True
+        if not self.primaryx['state'] and not self.standbyx['state']:
+            self._logit("Both Primary and Standby Networks are offline")
+            callaction(self.pd, "failover-bothdown", "{} {}".format(self._packifinfo(self.primaryx), self._packifinfo(self.standbyx)))
+            self.primaryx['on'] = self.standbyx['on'] = False
+            return False
+        return True
+
+    def run(self):
+        self.primaryx['state'] = self.standbyx['state'] = False
+        while self.pd.running:
+            for px in [self.primaryx, self.standbyx]:
+                if self._isonline(px, px['ping']):
+                    if not px['state']:
+                        px['ip'] = self._getipaddr(px['if'])
+                        if self.notfirst:
+                            self._logit("{} Network {} is now online".format(px['ename'], px['devnam']))
+                            self._logit("{} Network Outage Duration: {}".format(px['ename'], langdatediff(datetime.datetime.now() - px['timedown'])))
+                        else:
+                            self._printinistate(px, "online")
+                    if px == self.primaryx:
+                        pstate = px['state']
+                        px['state'] = True
+                        # Failover to primary if prefer primary, or primary was offline and standby not now online
+                        if self.prefprimary or (not pstate and not self.standbyx['state']):
+                            self._dofailover(self.primaryx, self.standbyx)
+                    else:
+                        px['state'] = True
+                        if not self.primaryx['state']:
+                            self._dofailover(self.standbyx, self.primaryx)
+                else:
+                    if px['state']:
+                        px['state'] = False
+                        if self.notfirst:
+                            px['timedown'] = datetime.datetime.now()
+                            self._logit("{} Network {} is now offline".format(px['ename'], px['devnam']))
+                    else:
+                        if not self.notfirst:
+                            px['timedown'] = datetime.datetime.now()
+                            self._printinistate(px, "offline")
+                        if px == self.standbyx:
+                            self._dofailover(self.primaryx, self.standbyx)
+                            self._ck1online()
+            self.notfirst = True
+            time.sleep(self.timer)
+        return
+
+class _updownMonitor(threading.Thread):
+    def __init__(self, pd):
+        threading.Thread.__init__(self)
+        self.pd = pd
+        self.online = self.notfirst = self.refuted = False
+        self.timer = self.interval = self.pd.db['updown']['interval']
+        self.lasttimedown = datetime.datetime.now()
+        self.setDaemon(True)
+        
+    def _logit(self, msg):
+        logit(self.pd, msg, mname="updown")
+
+    def _dnslookup(self, dnsname, dnsserver):
+        r = dosystem("dig -4 +short @{} {}".format(dnsserver, dnsname))
+        return r.stdout.strip()
+
+    def _ckmonitoredips(self):
+        if len(self.pd.db['updown']['addping']) >= 1 and self.pd.db['updown']['addping'][0] != "":
+            hosts = multiping(addresses=self.pd.db['updown']['addping'], count=self.pd.db['updown']['pingcount'], timeout=self.pd.db['updown']['pingwait'], privileged=True)
+            for host in hosts:
+                self._logit("Secondary IP {} {}".format(host.address, "online" if host.is_alive else "offline"))
+        return
+
+    def _reportup(self):
+        if not self.online:
+            self._logit("Monitored IP {} online".format(self.pd.db['updown']['monitorip']))
+            if self.notfirst:
+                ddiff = datetime.datetime.now() - self.lasttimedown
+                self._logit("Outage Duration: {}".format(langdatediff(ddiff)))
+                callaction(self.pd, "updown-online", "{} {}".format(self.pd.db['updown']['monitorip'], datediffstr(ddiff)))
+            else:
+                self.notfirst = True
+            self._ckmonitoredips()
+            self.timer = self.interval
+            self.online = True
+            self.refuted = False
+
+    def _reportdown(self):
+        if self.online:
+            self._logit("Monitored IP {} offline".format(self.pd.db['updown']['monitorip']))
+            self.lasttimedown = datetime.datetime.now()
+            callaction(self.pd, "updown-offline", self.pd.db['updown']['monitorip'])
+            self._ckmonitoredips()
+        self.timer = 1
+        self.online = False
+
+    def run(self):
+        while self.pd.running:
+            host = ping(self.pd.db['updown']['monitorip'], count=self.pd.db['updown']['pingcount'], timeout=self.pd.db['updown']['pingwait'], privileged=True)
+            isup = host.is_alive
+            if not isup:
+                if self.pd.db['updown']['dnsserver'] != "" and self.pd.db['updown']['dnslookup'] != "":
+                    isup = True if self._dnslookup(self.pd.db['updown']['dnslookup'], self.pd.db['updown']['dnsserver']) != "" else False
+                    if isup:
+                        if not self.refuted: self._logit("Offline of {} refuted by DNS query of '{}' on DNS server '{}'".format(self.pd.db['updown']['monitorip'],\
+                                                                                                                                self.pd.db['updown']['dnslookup'], self.pd.db['updown']['dnsserver']))
+                        self.refuted = True
+            if isup:
+                self._reportup()
+            else:
+                self._reportdown()
+            time.sleep(self.timer)
+
+class _ddnsMonitor(threading.Thread):
+    def __init__(self, pd):
+        threading.Thread.__init__(self)
+        self.pd = pd
+        self.myexternalip = "unknown"
+        self.interval = self.pd.db['ddns']['interval']
+        self.setDaemon(True)
+        
+    def _logit(self, msg):
+        logit(self.pd, msg, mname="ddns")
+
+    def _isdnsup(self, url):
+        dns = url.removeprefix("http://").split("/")[0]
+        host = ping(dns, count=2, timeout=1, privileged=True)
+        return host.is_alive
+    
+    def _getextip(self):
+        #url can either be just the url or url[method]. curl is only implemented method atm
+        ipproviders = ["whatismyip.akamai.com/", "ifconfig.co/ip", \
+                       "dynupdate.no-ip.com/ip.php", "icanhazip.com/", \
+                       "ident.me/", "l2.io/ip", \
+                       "ifconfig.me/ip", "wgetip.com/", \
+                       "ipinfo.io/ip", "ipecho.net/plain", \
+                       "curlmyip.net", "ip.seeip.org" ]
+
+        for purl in ipproviders:
+            urls = purl.split("[")
+            url = urls[0]
+            if not url.startswith("http"): url = "http://{}".format(url)
+            if url.startswith("https"):
+                mthd = "curl"
+            else:
+                mthd = "" if len(urls) <= 1 else urls[1].strip("]")
+            rsts = False
+            if mthd == "":
+                if self._isdnsup(url):   # Check if system is up first to work around weird requests error scenario
+                    try:
+                        r = requests.get(url, timeout=2.0)
+                        rsts = True
+                        op = r.text.strip()
+                    except:
+                        op = ""
+                    if rsts and isipaddr(op):
+                        return op
+            elif mthd == "curl":
+                try:
+                    r = dosystem("curl -s {}".format(url))
+                    op = r.stdout.strip()
+                except:
+                    op = ""
+                if r.returncode == 0 and isipaddr(op):
+                    return op
+        return "unknown"
+
+    def run(self):
+        testipaddr = [ '192.168.14.1', '172.16.12.2', '10.1.10.3', '192.168.14.4' ]
+        i = 0
+        while self.pd.running:
+            if not self.pd.db['global']['debug']:
+                thisextip = self._getextip()
+            else:
+                thisextip = testipaddr[i]
+                i += 1
+                i = i % len(testipaddr)
+            if thisextip == "" or thisextip == "unknown":
+                self._logit("%% Unable to obtain External IP Address")
+                callaction(self.pd, "ddns-no-update", "")
+            elif thisextip != self.myexternalip:
+                self._logit("External IP Address changed from {} to {}".format(self.myexternalip, thisextip))
+                # NewIP OldIP
+                callaction(self.pd, "ddns-ip-update", "{} {}".format(thisextip, self.myexternalip))
+                self.myexternalip = thisextip
+            time.sleep(self.interval)
+
+class _pingMonitor(threading.Thread):
+    def __init__(self, pd):
+        threading.Thread.__init__(self)
+        self.pd = pd
+        self.timer = self.pd.db['ping']['interval']
+        self.setDaemon(True)
+        
+    def _logit(self, msg):
+        logit(self.pd, msg, mname="ping")
+
+    def run(self):
+        while self.pd.running:
+            host = ping(self.pd.db['ping']['monitorip'], count=self.pd.db['ping']['pingcount'], timeout=self.pd.db['ping']['pingwait'], privileged=True)
+            if self.pd.db['global']['action'] == "":
+                self._logit("Ping Result: IP:{} State:{} minrtt:{} avgrtt:{} maxrtt:{} loss:{} jitter:{}".format(self.pd.db['ping']['monitorip'], host.is_alive,\
+                                                                                                                    host.min_rtt, host.avg_rtt, host.max_rtt,\
+                                                                                                                    host.packet_loss, host.jitter))
+            else:
+                callaction(self.pd, "ping-result", "{}:{}:{}:{}:{}:{}:{}".format(self.pd.db['ping']['monitorip'], host.is_alive,\
+                                                                      host.min_rtt, host.avg_rtt, host.max_rtt,\
+                                                                      host.packet_loss, host.jitter)) 
+            time.sleep(self.timer)
+
+def parse_command(pd):
+    pd.parser = argparse.ArgumentParser(
+        prog="imon",
+        description="imon Internet Monitor",
+        epilog="")
+
+    pd.parser.add_argument("--instance", default="main", help="Instance name [main]")
+    pd.parser.add_argument("--nosyslog", action='store_true', help="")
+
+    pd.args = pd.parser.parse_args()
+
+def ckinterval(pd, section):
+    try:
+        f = float(pd.db[section]['interval'])
+    except:
+        f = 0.0
+    if f == 0.0: perrorexit("? Invalid value '{}' for {}".format(pd.db[section][iname], iname))
+    pd.db[section]['interval'] = f
+    return
+
+def main():
+    pd = pdat()
+    parse_command(pd)
+    pd.syslog = not pd.args.nosyslog
+    pd.instance = pd.args.instance
+
+    logit(pd, "Starting")
+    logit(pd, "Version {}".format(version))
+    logit(pd, "Command line: {}".format(" ".join(sys.argv)))
+
+    getconfig(pd)
+
+    if pd.db['ddns']['enable']:
+        ckinterval(pd, 'ddns')
+        #if pd.db['global']['action'] == "": perrorexit("? ddns monitor requires action script")
+        
+    if pd.db['updown']['enable']:
+        ckinterval(pd, 'updown')
+
+    if pd.db['failover']['enable']:
+        ckinterval(pd, 'failover')
+        missing = ""
+        for s in ['primary-if', 'primary-gw', 'standby-if', 'standby-gw']:
+            if not s in pd.db['failover']:
+                missing = "{} {}".format(missing, s)
+            else:
+                if pd.db['failover'][s] == "": missing = "{} {}".format(missing, s)
+        if missing != "": perrorexit("? Missing settings for failover monitor: {}".format(missing))
+
+    if pd.db['ping']['enable']:
+        ckinterval(pd, 'ping')
+        #if pd.db['global']['action'] == "": perrorexit("? ping monitor requires action script")
+        if pd.db['ping']['monitorip'] == "": perrorexit("? ping monitor requires an IP Address to monitor")
+        
+    afile = pd.db['global']['action']
+    if afile != "":
+        if not os.path.exists(afile): perrorexit("? Action script '{}' not found".format(afile))
+        if not os.access(afile, os.X_OK): perrorexit("? Action script '{}' not executable".format(afile))
+
+    mfn = 0
+    for mon in ['ddns', 'failover', 'updown', 'ping']:
+        if pd.db[mon]['enable']: mfn += 1
+    if mfn > 1:
+        pd.multifn = True
+    elif mfn == 0:
+        perrorexit("? No monitors are enabled. See documentation")
+
+    pd.running = True
+    if pd.db['ddns']['enable']:
+        logit(pd, "Start External IP Address tracking", mname="ddns")
+        pd.ddnsmon = _ddnsMonitor(pd)
+        pd.ddnsmon.start()
+    if pd.db['updown']['enable']:
+        logit(pd, "Start Updown Monitor for IP Address {}".format(pd.db['updown']['monitorip']), mname="updown")
+        pd.udmon = _updownMonitor(pd)
+        pd.udmon.start()
+    if pd.db['failover']['enable']:
+        logit(pd, "Start Network Failover Monitor", mname="failover")
+        pd.fomon = _failoverMonitor(pd)
+        pd.fomon.start()
+    if pd.db['ping']['enable']:
+        logit(pd, "Start Ping Monitor", mname="ping")
+        pd.pingmon = _pingMonitor(pd)
+        pd.pingmon.start()
+
+    while pd.running:
+        time.sleep(1)
+    return
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass
+    except:
+        raise
+    exit(0)

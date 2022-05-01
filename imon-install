@@ -1,0 +1,20 @@
+#!/bin/bash
+
+for f in imon imon-configure imon-action.sample
+do
+    sudo curl https://raw.githubusercontent.com/gitbls/imon/master/$f -o /usr/local/bin/$f
+    sudo chmod 755 /usr/local/bin/$f
+done
+
+sudo curl https://raw.githubusercontent.com/gitbls/imon/master/imon@.service -o /etc/systemd/system/imon@.service
+
+if [ "$(which pip3)" == "" ]
+then
+    echo "Installing pip3"
+    sudo apt install pip3 --yes
+fi
+if [ "$(pip3 list | grep icmplib)" == "" ]
+then
+    echo "Installing icmplib for python3"
+    sudo pip3 install icmplib
+fi

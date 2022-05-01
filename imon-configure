@@ -1,0 +1,277 @@
+#!/usr/bin/python3
+#
+# Build configuration file for imon
+#
+
+version="V1.0"
+import datetime
+import ipaddress
+import json
+import os
+import readline
+import re
+
+def perrorexit(emsg):
+    """
+    Print the message and exit the program
+    """
+    raise SystemExit(emsg)
+
+def getinput(prompt):
+    try:
+        str = input(prompt).lower()
+    except (EOFError, KeyboardInterrupt):
+        print("")
+        exit(0)
+    except:
+        print("")
+        str = ""
+    return str
+
+def askyn(question, dfans=""):
+    """
+    Prompt for an answer with the given question.
+    Returns True if yes, False if anything else
+    """
+    yni = getinput(question)
+    if yni == "" and dfans != "": yni = dfans.lower()
+    if yni != "" and "yes".startswith(yni): return True
+    return False
+
+def askinput(question, dfans=""):
+    prompt = "{}: ".format(question) if dfans == "" else "{} [{}]: ".format(question, dfans)
+    str = getinput(prompt)
+    if str == "": str = dfans
+    return str
+
+def isdnsname(domain):
+    return re.match('''
+        (?=^.{,253}$)          # max. length 253 chars
+        (?!^.+\.\d+$)          # TLD is not fully numerical
+        (?=^[^-.].+[^-.]$)     # doesn't start/end with '-' or '.'
+        (?!^.+(\.-|-\.).+$)    # levels don't start/end with '-'
+        (?:[a-z\d-]            # uses only allowed chars
+        {1,63}(\.|$))          # max. level length 63 chars
+        {2,127}                # max. 127 levels
+        ''', domain, re.X | re.I)
+
+def isipaddr(address):
+    try:
+        ip = ipaddress.ip_address(address)
+        return True
+    except ValueError:
+        return False
+
+def getfile(prompt, dfans=""):
+    while True:
+        str = askinput(prompt)
+        if str != "":
+            if os.path.exists(str):
+                if os.access(str, os.X_OK): break
+                print("% File '{}' is not executable".format(str))
+            else:
+                print("% File '{}' does not exist".format(str))
+        else:
+            break
+    return str
+
+def getint(prompt, dfans=""):
+    while True:
+        str = askinput(prompt, dfans)
+        try:
+            n = int(str)
+            if n > 0: break
+            print("% Must be greater than 0")
+        except:
+            print("% Enter an integer")
+    return n
+
+def getfloat(prompt, dfans=""):
+    while True:
+        str = askinput(prompt, dfans)
+        try:
+            n = float(str)
+            if n > 0.0: break
+            print("% Must be greater than 0.0")
+        except:
+            print("% Enter an integer or floating point number")
+    return n
+
+def getyn(prompt, dfans=""):
+    while True:
+        yni = askinput(prompt, dfans)
+        return "yes".startswith(yni)
+
+def getstring(prompt, dfans="", optional=False):
+    while True:
+        str = askinput(prompt, dfans)
+        if optional or str != "": break
+        print("% Value required")
+    return str
+
+def getipaddr(prompt, dfans="", optional=False):
+    while True:
+        ip = askinput(prompt, dfans)
+        if optional and ip == "": break
+        if ip != "" and isipaddr(ip): break
+        print("% IP Address required")
+    return ip
+
+def isiplist(str):
+    le = str.split(",")
+    for hn in le:
+        if not (isdnsname(hn) or isipaddr(hn)):
+            return False
+    return True
+
+def getiplist(prompt, dfans="", optional=False):
+    while True:
+        ip = askinput(prompt, dfans)
+        if ip != "" and isiplist(ip): break
+        if optional and ip == "": break
+        print("% A DNS Name/IP Address is ill-formed")
+    return ip
+
+def getdnsname(prompt, dfans="", optional=False):
+    while True:
+        dn = askinput(prompt, dfans)
+        if dn != "" and (isdnsname(dn) or isipaddr(dn)): break
+        if optional and dn == "": break
+        print("% A DNS name or IP address is required")
+    return dn
+
+def ckinterval(pd, section):
+    try:
+        f = float(pd.db[section]['interval'])
+    except:
+        f = 0.0
+    if f == 0.0: perrorexit("? Invalid value '{}' for {}".format(pd.db[section][iname], iname))
+    pd.db[section]['interval'] = f
+    return
+
+def doconfigure(mon, pd):
+    for item in pd.db[mon]:
+        if item != "enable":
+            thisdefault = pd.db[mon][item]
+            thistype = pd.pdtype[mon][item][0]
+            thisprompt = "{} ({})".format(pd.pdtype[mon][item][1], item)
+            if thistype == "tf":
+                pd.db[mon][item] = getyn(thisprompt, "N")
+            elif thistype == "int":
+                pd.db[mon][item] = getint(thisprompt, thisdefault)
+            elif thistype == "float":
+                pd.db[mon][item] = getfloat(thisprompt, thisdefault)
+            elif thistype == "required-str":
+                pd.db[mon][item] = getstring(thisprompt, thisdefault, optional=False)
+            elif thistype == "optional-str":
+                pd.db[mon][item] = getstring(thisprompt, thisdefault, optional=True)
+            elif thistype == "required-ipaddr":
+                pd.db[mon][item] = getipaddr(thisprompt, optional=False)
+            elif thistype == "optional-ipaddr":
+                pd.db[mon][item] = getipaddr(thisprompt, optional=True)
+            elif thistype == "optional-dns":
+                pd.db[mon][item] = getdnsname(thisprompt, optional=True)
+            elif thistype == "required-dns":
+                pd.db[mon][item] = getdnsname(thisprompt, optional=False)
+            elif thistype == "iplist":
+                pd.db[mon][item] = getiplist(thisprompt, optional=True)
+            elif thistype == "file":
+                pd.db[mon][item] = getfile(thisprompt)
+        else:
+            pd.db[mon][item] = True
+    return
+
+def runconfigure(pd):
+    for mon in ['ddns', 'updown', 'failover', 'ping']:
+        if askyn("* Enable the '{}' monitor? [y/N]: ".format(mon)):
+            doconfigure(mon, pd)
+            if pd.db[mon]['enable']:
+                ckinterval(pd, mon)
+                if mon == "ddns":
+                    pass
+                    #if pd.db['global']['action'] == "":
+                        #print("? ddns monitor requires action script")
+                        #return False
+                elif mon == "updown":
+                    if pd.db['updown']['monitorip'] == "":
+                        print("? updown monitor requires an IP Address to monitor")
+                        return False
+                    pass
+                elif mon == "failover":
+                    missing = ""
+                    for s in ['primary-if', 'primary-gw', 'standby-if', 'standby-gw']:
+                        if not s in pd.db['failover']:
+                            missing = "{} {}".format(missing, s)
+                        else:
+                            if pd.db['failover'][s] == "": missing = "{} {}".format(missing, s)
+                        if missing != "":
+                            print("? Missing settings for failover monitor: {}".format(missing))
+                            return False
+                elif mon == "ping":
+                    #if pd.db['global']['action'] == "":
+                        #print("? ping monitor requires action script")
+                        #return False
+                    if pd.db['ping']['monitorip'] == "":
+                        print("? ping monitor requires an IP Address to monitor")
+                        return False
+    return True
+
+class pdat:
+    def __init__(self):
+        self.db = {}
+
+def main():
+    # This gets written to the instance configuration file
+    pd = pdat()
+    pd.db = { "global":{"action":"", "datefmt":"%Y-%m-%d %H:%M:%S"},\
+           "ddns":{"enable":False, "interval":10, "pingcount":2, "pingwait":1},\
+           "updown":{"enable":False, "interval":10, "pingcount":2, "pingwait":1, "monitorip":"", "addping":"", "dnsserver":"", "dnslookup":""},\
+           "failover":{"enable":False, "interval":10, "pingcount":2, "pingwait":1, "prefer-primary":False, "metric":201,\
+                       "primary-if":"", "primary-name":"", "primary-gw":"", "primary-ping":"", "primary-postping":"",\
+                       "standby-if":"", "standby-name":"", "standby-gw":"", "standby-ping":"", "standby-postping":""},\
+           "ping":{"enable":False, "interval":10, "pingcount":2, "pingwait":1, "monitorip":""} }
+
+    # This parallels pd, but has additional info for each item for processing
+    pd.pdtype = {"global":{"action":["file", "Full path to action script"], "datefmt":["none",""]},\
+              "ddns":{"enable":["tf","SNH"], "interval":["float","Interval between checks"],\
+                      "pingcount":["int","Ping count"], "pingwait":["int","Ping wait time"] },\
+              "updown":{"enable":["tf","SNH"], "interval":["float","Interval between checks"],\
+                        "pingcount":["int","Ping count"], "pingwait":["int","Ping wait time"],\
+                        "monitorip":["required-dns","Name/IP address to monitor"], "addping":["iplist","Additional IP addresses to ping"],\
+                        "dnsserver":["optional-dns","Name/IP address of DNS server"],"dnslookup":["optional-dns","DNS name to lookup"]},\
+              "failover":{"enable":["tf","SNH"], "interval":["float","Interval between checks"], "prefer-primary":["tf","Prefer primary network"],\
+                          "pingcount":["float","Ping count"], "pingwait":["float","Ping wait time"], "metric":["int", "Network default route metric"],\
+                          "primary-if":["required-str","Primary network interface name"], "primary-name":["required-str", "Primary network name"],\
+                          "primary-gw":["required-ipaddr","Primary network gateway IP Address"],\
+                          "primary-ping":["optional-dns", "Name/IP Address to check if Primary network is up"],\
+                          "primary-postping":["optional-dns","Name/IP Address to ping after failover to Primary"],\
+                          "standby-if":["required-str","Standby network interface name"], "standby-name":["required-str","Standby network name"],\
+                          "standby-gw":["required-ipaddr","Standby network gateway IP Address"],\
+                          "standby-ping":["optional-dns", "Name/IP Address to check if Standby network is up"],\
+                          "standby-postping":["optional-dns","Name/IP Address to ping after failover to Standby"]},\
+              "ping":{"enable":["tf","SNH"], "interval":["float","Interval between pings"], "monitorip":["required-dns","Name/IP Address to ping"],\
+                      "pingcount":["int","Ping count"], "pingwait":["int","Ping wait time"] } }
+    print("\nBuild imon configuration file")
+    print("See https://github.com/gitbls/imon for configuration details\n")
+    instance = askinput("Instance name",dfans="main")
+    cfnote = askinput("Note to add to config file", dfans="")
+    doconfigure("global", pd)
+    runconfigure(pd)
+    pd.db['global']['instance'] = instance
+    pd.db['global']['note'] = cfnote
+    pd.db['global']['imon-configure-version'] = version
+    pd.db['global']['imon-configure-created'] = datetime.datetime.strftime(datetime.datetime.now(), "%Y-%m-%d %H:%M:%S")
+    #
+    # All done!
+    #
+    cfile = "/etc/default/imon-{}".format(instance)
+    if not askyn("\nWrite configuration file '{}'? [Y/n] ".format(cfile), dfans="Y"): return
+    with open(cfile, "w") as jf:
+        json.dump(pd.db, jf, indent=4, sort_keys=False)
+        jf.write("\n")  #Add final eol lol
+    print("Wrote '{}'".format(cfile))
+    return
+
+if __name__ == "__main__":
+    main()
+    exit(0)
