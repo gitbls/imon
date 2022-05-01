@@ -345,4 +345,4 @@ Intervals can be specified as either integers or floating point.
 
 By default, imon logs everything to the system log. For interactive testing, you can use the `--nosyslog` switch to have the log output displayed on the terminal.
 
-You can see some sample logs at [sample-logs.md](https://raw.githubusercontent.com/gitbls/imon/main/sample-logs.md)
+You can see some sample logs at [sample-logs.md](https://github.com/gitbls/imon/blob/main/sample-logs.md)
