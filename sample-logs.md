@@ -138,7 +138,7 @@ Apr 30 13:32:49 p83 imon[5441]: imon [updown]     pingwait          1
 Apr 30 13:32:49 p83 imon[5441]: imon [updown]     monitorip         192.168.42.1
 Apr 30 13:32:49 p83 imon[5441]: imon [updown]     addping           192.168.92.1
 Apr 30 13:32:49 p83 imon[5441]: imon [updown]     dnsserver
-Apr 30 13:32:49 p83 imon[5441]: imon [updown]     dnslookup         pisrv1.crystix.com
+Apr 30 13:32:49 p83 imon[5441]: imon [updown]     dnslookup         somehost.somedomain.com
 Apr 30 13:32:49 p83 imon[5441]: imon [updown] ** [failover] **
 Apr 30 13:32:49 p83 imon[5441]: imon [updown]     enable            False
 Apr 30 13:32:49 p83 imon[5441]: imon [updown]     interval          10
