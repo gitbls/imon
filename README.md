@@ -22,14 +22,14 @@ imon is easy to install/configure and runs as a systemd service.
 
 imon can be installed using the installation script `install-imon`:
 
-* `sudo curl -L https://raw.githubusercontent.com/gitbls/imon/master/install-imon | bash`
+* `sudo curl -L https://raw.githubusercontent.com/gitbls/imon/main/imon-install | bash`
 
 If you prefer to install imon manually, use these steps:
 
-* `sudo curl https://raw.githubusercontent.com/gitbls/imon/master/imon -o /usr/local/bin/imon`
-* `sudo curl https://raw.githubusercontent.com/gitbls/imon/master/imon-configure -o /usr/local/bin/imon-configure`
-* `sudo curl https://raw.githubusercontent.com/gitbls/imon/master/imon-action.sample -o /usr/local/bin/imon-action.sample`
-* `sudo curl https://raw.githubusercontent.com/gitbls/imon/master/imon@.service -o /etc/systemd/system/imon@.service`
+* `sudo curl https://raw.githubusercontent.com/gitbls/imon/main/imon -o /usr/local/bin/imon`
+* `sudo curl https://raw.githubusercontent.com/gitbls/imon/main/imon-configure -o /usr/local/bin/imon-configure`
+* `sudo curl https://raw.githubusercontent.com/gitbls/imon/main/imon-action.sample -o /usr/local/bin/imon-action.sample`
+* `sudo curl https://raw.githubusercontent.com/gitbls/imon/main/imon@.service -o /etc/systemd/system/imon@.service`
 * `sudo chmod 755 /usr/local/bin/{imon,imon-configure,imon-action}`
 * `sudo pip3 install icmplib`
 
@@ -122,7 +122,7 @@ See the annotated configuration file at the end of this document for a  descript
 
 ## Action Scripts
 
-If you have specified an action script, it will be called for several different events. The action script arguments are described in the provided /user/local/bin/imon-action.sample, which is also located at [imon-action.sample](https://github.com/gitbls/imon/blob/master/imon-action.sample) on this github. The sample action script doesn't actually *do* anything other than log all the calls. If you have basic scripting knowledge it should be fairly understandable.
+If you have specified an action script, it will be called for several different events. The action script arguments are described in the provided /user/local/bin/imon-action.sample, which is also located at [imon-action.sample](https://github.com/gitbls/imon/blob/main/imon-action.sample) on this github. The sample action script doesn't actually *do* anything other than log all the calls. If you have basic scripting knowledge it should be fairly understandable.
 
 ## imon Monitor Details
 
