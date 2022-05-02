@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-version="V2.90"
+version="V2.95"
 
 import argparse
 import datetime
@@ -164,17 +164,16 @@ class _failoverMonitor(threading.Thread):
         return ' '.join(ipline.split()).split()[2].split("/")[0] if ipline != "" else ""
         return ipaddr
 
-    def _isonline(self, ifdat, iping=""):
-        tip = iping if iping != "" else ifdat['gw']
+    def _isonline(self, ifdat, iping):
         try:
-            host = ping(tip, count=self.pd.db['failover']['pingcount'], timeout=self.pd.db['failover']['pingwait'], source=ifdat['ip'], privileged=True)
+            host = ping(iping, count=self.pd.db['failover']['pingcount'], timeout=self.pd.db['failover']['pingwait'], source=ifdat['ip'], privileged=True)
             return host.is_alive
         except:
             return False
 
     def _ckping(self, ifdat):
         if ifdat['postping'] != "":
-            if self._isonline(ifdat, iping=ifdat['postping']):
+            if self._isonline(ifdat, ifdat['postping']):
                 self._logit("Info: {} Network Ping Target {} Online After Failover".format(ifdat['ename'], ifdat['postping']))
                 olstatus = "online"
             else:
@@ -228,7 +227,7 @@ class _failoverMonitor(threading.Thread):
         self.primaryx['state'] = self.standbyx['state'] = False
         while self.pd.running:
             for px in [self.primaryx, self.standbyx]:
-                if self._isonline(px, px['ping']):
+                if self._isonline(px, px['ping'] if px['ping'] != "" else px['gw']):
                     if not px['state']:
                         px['ip'] = self._getipaddr(px['if'])
                         if self.notfirst:
@@ -250,6 +249,7 @@ class _failoverMonitor(threading.Thread):
                     if px['state']:
                         px['state'] = False
                         if self.notfirst:
+                            self._route_delete(px)
                             px['timedown'] = datetime.datetime.now()
                             self._logit("{} Network {} is now offline".format(px['ename'], px['devnam']))
                     else:
