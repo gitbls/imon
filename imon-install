@@ -2,11 +2,11 @@
 
 for f in imon imon-configure imon-action.sample
 do
-    sudo curl https://raw.githubusercontent.com/gitbls/imon/master/$f -o /usr/local/bin/$f
+    sudo curl https://raw.githubusercontent.com/gitbls/imon/main/$f -o /usr/local/bin/$f
     sudo chmod 755 /usr/local/bin/$f
 done
 
-sudo curl https://raw.githubusercontent.com/gitbls/imon/master/imon@.service -o /etc/systemd/system/imon@.service
+sudo curl https://raw.githubusercontent.com/gitbls/imon/main/imon@.service -o /etc/systemd/system/imon@.service
 
 if [ "$(which pip3)" == "" ]
 then
