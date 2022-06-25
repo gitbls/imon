@@ -339,8 +339,13 @@ class _ddnsMonitor(threading.Thread):
 
     def _isdnsup(self, url):
         dns = url.removeprefix("http://").split("/")[0]
-        host = ping(dns, count=2, timeout=1, privileged=True)
-        return host.is_alive
+        try:
+            host = ping(dns, count=2, timeout=1, privileged=True)
+        except:
+            pass
+        else:
+            return host.is_alive
+        return False
     
     def _getextip(self):
         #url can either be just the url or url[method]. curl is only implemented method atm
