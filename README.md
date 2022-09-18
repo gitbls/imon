@@ -37,7 +37,7 @@ After the installation completes, run `sudo imon-configure` to create an instanc
 
 A configuration file is selected by using the `--instance` *instancename* switch when run from the command line, or by starting a new systemd service instance named imon@*instancename*.
 
-## imon Cxapabilities
+## imon Capabilities
 
 imon has four different monitoring capabilities. They can all be run in the same imon instance, or can be run in separate instances. If multiple monitors are active in the same instance, the log output identifies the monitor generating the log entry.
 
