@@ -122,7 +122,7 @@ See the annotated configuration file at the end of this document for a  descript
 
 ## Action Scripts
 
-If you have specified an action script, it will be called for several different events. The action script arguments are described in the provided /user/local/bin/imon-action.sample, which is also located at [imon-action.sample](https://github.com/gitbls/imon/blob/main/imon-action.sample) on this github. The sample action script doesn't actually *do* anything other than log all the calls. If you have basic scripting knowledge it should be fairly understandable.
+If you have specified an action script, it will be called for several different events. The action script arguments are described in the provided /usr/local/bin/imon-action.sample, which is also located at [imon-action.sample](https://github.com/gitbls/imon/blob/main/imon-action.sample) on this github. The sample action script doesn't actually *do* anything other than log all the calls. If you have basic scripting knowledge it should be fairly understandable.
 
 ## imon Monitor Details
 
