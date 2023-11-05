@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-version="V2.95"
+version="V2.96"
 
 import argparse
 import datetime
@@ -119,6 +119,7 @@ class pdat:
 class _failoverMonitor(threading.Thread):
     def __init__(self, pd):
         threading.Thread.__init__(self)
+        self.daemon = True
         self.pd = pd
         self.notfirst = False
         self.timer = self.interval = self.pd.db['failover']['interval']
@@ -148,7 +149,6 @@ class _failoverMonitor(threading.Thread):
         self.standbyx['devnam'] = "'{}'".format(self.standbyx['if']) if self.standbyx['name'] == "" \
             else "{} ({})".format(self.standbyx['name'], self.standbyx['if'])
         self.prefprimary = self.pd.db['failover']['prefer-primary']
-        self.setDaemon(True)
 
     def _packifinfo(self, ifdat):
         return "{}:{}:{}:{}".format(ifdat['name'],ifdat['ename'],ifdat['if'],ifdat['ip'])
@@ -266,11 +266,11 @@ class _failoverMonitor(threading.Thread):
 class _updownMonitor(threading.Thread):
     def __init__(self, pd):
         threading.Thread.__init__(self)
+        self.daemon = True
         self.pd = pd
         self.online = self.notfirst = self.refuted = False
         self.timer = self.interval = self.pd.db['updown']['interval']
         self.lasttimedown = datetime.datetime.now()
-        self.setDaemon(True)
         
     def _logit(self, msg):
         logit(self.pd, msg, mname="updown")
@@ -329,10 +329,10 @@ class _updownMonitor(threading.Thread):
 class _ddnsMonitor(threading.Thread):
     def __init__(self, pd):
         threading.Thread.__init__(self)
+        self.daemon = True
         self.pd = pd
         self.myexternalip = "unknown"
         self.interval = self.pd.db['ddns']['interval']
-        self.setDaemon(True)
         
     def _logit(self, msg):
         logit(self.pd, msg, mname="ddns")
@@ -408,9 +408,9 @@ class _ddnsMonitor(threading.Thread):
 class _pingMonitor(threading.Thread):
     def __init__(self, pd):
         threading.Thread.__init__(self)
+        self.daemon = True
         self.pd = pd
         self.timer = self.pd.db['ping']['interval']
-        self.setDaemon(True)
         
     def _logit(self, msg):
         logit(self.pd, msg, mname="ping")

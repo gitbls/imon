@@ -31,7 +31,9 @@ If you prefer to install imon manually, use these steps:
 * `sudo curl https://raw.githubusercontent.com/gitbls/imon/main/imon-action.sample -o /usr/local/bin/imon-action.sample`
 * `sudo curl https://raw.githubusercontent.com/gitbls/imon/main/imon@.service -o /etc/systemd/system/imon@.service`
 * `sudo chmod 755 /usr/local/bin/{imon,imon-configure,imon-action}`
-* `sudo pip3 install icmplib`
+* Install icmplib
+  * On Bullseye: `sudo pip3 install icmplib`
+  * On Bookworm: `sudo apt install python3-icmplib`
 
 After the installation completes, run `sudo imon-configure` to create an instance configuration file. You can have as many instance configuration files as you want, each with a different settings configuration.
 

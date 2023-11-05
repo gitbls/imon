@@ -1,5 +1,10 @@
 # Changelog
 
+## V2.96
+
+* Use python3-icmplib on Bookworm
+* Eliminate python deprecation messages
+
 ## V2.95
 
 * Code cleanup
