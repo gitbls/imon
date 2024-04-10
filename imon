@@ -277,7 +277,11 @@ class _updownMonitor(threading.Thread):
 
     def _dnslookup(self, dnsname, dnsserver):
         r = dosystem("dig -4 +short @{} {}".format(dnsserver, dnsname))
-        return r.stdout.strip()
+        s = r.stdout.strip()
+        if re.search('[g-z]', s, re.IGNORECASE) is None:   # a-f ignored for (future) IPV6. Errors have g-z 
+            return s
+        else:
+            return ""
 
     def _ckmonitoredips(self):
         if len(self.pd.db['updown']['addping']) >= 1 and self.pd.db['updown']['addping'][0] != "":
