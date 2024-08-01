@@ -24,16 +24,17 @@ imon can be installed using the installation script `install-imon`:
 
 * `sudo curl -L https://raw.githubusercontent.com/gitbls/imon/main/imon-install | bash`
 
-If you prefer to install imon manually, use these steps:
+If you prefer to install imon manually, use these steps, which is exactly what imon-install does:
 
 * `sudo curl https://raw.githubusercontent.com/gitbls/imon/main/imon -o /usr/local/bin/imon`
 * `sudo curl https://raw.githubusercontent.com/gitbls/imon/main/imon-configure -o /usr/local/bin/imon-configure`
 * `sudo curl https://raw.githubusercontent.com/gitbls/imon/main/imon-action.sample -o /usr/local/bin/imon-action.sample`
 * `sudo curl https://raw.githubusercontent.com/gitbls/imon/main/imon@.service -o /etc/systemd/system/imon@.service`
 * `sudo chmod 755 /usr/local/bin/{imon,imon-configure,imon-action}`
-* Install icmplib
-  * On Bullseye: `sudo pip3 install icmplib`
-  * On Bookworm: `sudo apt install python3-icmplib`
+* Install icmplib and requests
+  * `sudo apt install pip3 --yes --no-install-recommends`
+  * `sudo python -m venv /root/.imon-venv`
+  * `sudo /root/.imon-venv/bin/pip3 install icmplib requests`
 
 After the installation completes, run `sudo imon-configure` to create an instance configuration file. You can have as many instance configuration files as you want, each with a different settings configuration.
 

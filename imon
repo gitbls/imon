@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-version="V2.96"
+version="V2.97"
 
 import argparse
 import datetime
@@ -177,7 +177,7 @@ class _failoverMonitor(threading.Thread):
                 self._logit("Info: {} Network Ping Target {} Online After Failover".format(ifdat['ename'], ifdat['postping']))
                 olstatus = "online"
             else:
-                self._logit("Warn: {} Network Ping Target {} Not Responding After Failover".format(ifdat['ename'], ifda['postping']))
+                self._logit("Warn: {} Network Ping Target {} Not Responding After Failover".format(ifdat['ename'], ifdat['postping']))
                 olstatus = "offline"
             callaction(self.pd, "failover-postping", "{} {}".format(self._packifinfo(ifdat), olstatus))
 

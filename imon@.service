@@ -4,7 +4,7 @@ Requires=network-online.target
 After=network-online.target nss-lookup.target
 
 [Service]
-ExecStart=/usr/local/bin/imon --instance %I
+ExecStart=/root/.imon-venv/bin/python /usr/local/bin/imon --instance %I
 User=root
 StandardInput=null
 Restart=on-failure
