@@ -230,7 +230,7 @@ It's useful for checking up on your internet connection availability, tracking a
 
 Some large internet systems are known to block inbound ping when their system load is high. In order to verify that a system is really down (and hence the internet is down), the monitor can try to do a DNS name lookup (parameter *dnslookup*) on an internet-based DNS server (parameter *dnsserver*). If the ping target reports down but the DNS name resolves, imon considers the network to be online.
 
-The updown monitor can also be used to deal with a flakey network. For example, if a system ends up in a problem state that can only be resolved by restarting dhcpcd, use imon on that system to monitor your router. If the router goes offline, your action script can restart dhcpcd, or whatever else you determine is appropriate.
+The updown monitor can also be used to deal with a flakey network. For example, if a system ends up in a problem state that can only be resolved by restarting NetworkManager or dhcpcd, use imon on that system to monitor your router. If the router goes offline, your action script can restart NetworkManager or dhcpcd, or whatever else you determine is appropriate.
 
 ## Usage Hints
 
