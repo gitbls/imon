@@ -32,7 +32,7 @@ If you prefer to install imon manually, use these steps, which is exactly what i
 * `sudo curl https://raw.githubusercontent.com/gitbls/imon/main/imon@.service -o /etc/systemd/system/imon@.service`
 * `sudo chmod 755 /usr/local/bin/{imon,imon-configure,imon-action}`
 * Install icmplib and requests
-  * `sudo apt install pip3 --yes --no-install-recommends`
+  * `sudo apt install python3-pip --yes --no-install-recommends`
   * `sudo python -m venv /root/.imon-venv`
   * `sudo /root/.imon-venv/bin/pip3 install icmplib requests`
 
@@ -113,7 +113,7 @@ p83~$
 ```
 Once you have created your instance configuration file, test it interactively:
 
-* `sudo /usr/local/bin/imon --nosyslog --instance` *myinstance*
+* `sudo /root/.imon-venv/bin/python /usr/local/bin/imon --nosyslog --instance` *myinstance*
 
 Correct configuration settings as needed, and once you're satisfied with the configuration, enable the service:
 

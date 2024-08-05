@@ -15,8 +15,8 @@ $sudo curl -L $srcurl/imon@.service -o /etc/systemd/system/imon@.service
 
 if [ "$(which pip3)" == "" ]
 then
-    echo "> Install pip3"
-    $sudo apt install pip3 --yes --no-install-recommends
+    echo "> Install python3-pip"
+    $sudo apt install python3-pip --yes --no-install-recommends
 fi
 echo "> Create python3 venv: /root/.imon-venv"
 $sudo python3 -m venv /root/.imon-venv
