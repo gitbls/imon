@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-version="V2.97"
+version="V2.98"
 
 import argparse
 import datetime
