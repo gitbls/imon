@@ -4,7 +4,7 @@ version="V2.97"
 
 import argparse
 import datetime
-from icmplib import ping, multiping
+from icmplib import ping, multiping, NameLookupError
 import ipaddress
 import json
 import os
@@ -284,8 +284,12 @@ class _updownMonitor(threading.Thread):
             return ""
 
     def _ckmonitoredips(self):
+        hosts = []
         if len(self.pd.db['updown']['addping']) >= 1 and self.pd.db['updown']['addping'][0] != "":
-            hosts = multiping(addresses=self.pd.db['updown']['addping'], count=self.pd.db['updown']['pingcount'], timeout=self.pd.db['updown']['pingwait'], privileged=True)
+            try:
+                hosts = multiping(addresses=self.pd.db['updown']['addping'], count=self.pd.db['updown']['pingcount'], timeout=self.pd.db['updown']['pingwait'], privileged=True)
+            except NameLookupError as e:
+                self._logit(f"Name Lookup Error: {e}")
             for host in hosts:
                 self._logit("Secondary IP {} {}".format(host.address, "online" if host.is_alive else "offline"))
         return
