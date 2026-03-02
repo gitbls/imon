@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-version="V2.98"
+version="V2.99"
 
 import argparse
 import datetime
@@ -72,7 +72,7 @@ def langdatediff(adiff):
     return "{} days {} hours, {} minutes {} seconds".format(adiff.days, ahours, amins, asecs)
 
 def isdnsname(domain):
-    return re.match('''
+    return re.match(r'''
         (?=^.{,253}$)          # max. length 253 chars
         (?!^.+\.\d+$)          # TLD is not fully numerical
         (?=^[^-.].+[^-.]$)     # doesn't start/end with '-' or '.'
